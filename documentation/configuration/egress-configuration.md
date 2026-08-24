@@ -155,6 +155,7 @@ First Available: 8.0
 | bucketName | string | true | The name of the S3 Bucket to which the blob will be egressed. |
 | accessKeyId | string | false | The AWS AccessKeyId for IAM user to login.  |
 | secretAccessKey | string | false | The AWS SecretAccessKey associated AccessKeyId for IAM user to login. To login by access key id the 'secretAccessKey' must be set. |
+| sessionToken | string | false | The AWS SessionToken that accompanies temporary (STS-issued) credentials, e.g. those returned by `sts:AssumeRole` or by an S3-compatible service that issues short-lived credentials. When set, both 'accessKeyId' and 'secretAccessKey' must also be set. |
 | awsProfileName | string | false | The AWS profile name to be used for login. |
 | awsProfilePath | string | false | The AWS profile path, if profile details not stored in default path. |
 | regionName | string | false | A Region is a named set of AWS resources in the same geographical area. This option specifies the region to connect to. If the Endpoint is specified, this is the AuthenticationRegion; otherwise, it is the RegionEndpoint. |
@@ -220,6 +221,51 @@ First Available: 8.0
   --dry-run=client -o yaml | kubectl apply -f -
  ```
 </details>
+
+### Authenticating to S3 using temporary credentials
+
+Some credential issuers (`sts:AssumeRole`, HashiCorp Vault, and several S3-compatible services) only ever hand out short-lived credentials, which consist of an access key id, a secret access key **and** a session token. All three must be presented on every request; a request signed with only the first two is rejected by the service.
+
+Set `sessionToken` alongside `accessKeyId` and `secretAccessKey` to use such credentials. `endpoint`, `regionName` and `forcePathStyle` are honored as usual, so this works against a custom S3-compatible endpoint.
+
+<details>
+  <summary>JSON with a session token</summary>
+
+  ```json
+  {
+      "Egress": {
+          "S3Storage": {
+              "monitorS3Blob": {
+                  "endpoint": "https://s3.example.com",
+                  "bucketName": "myS3Bucket",
+                  "accessKeyId": "myTemporaryAccessKeyId",
+                  "secretAccessKey": "myTemporarySecretAccessKey",
+                  "sessionToken": "mySessionToken",
+                  "regionName": "auto",
+                  "forcePathStyle": true
+              }
+          }
+      }
+  }
+  ```
+</details>
+
+<details>
+  <summary>Kubernetes Secret</summary>
+
+  ```sh
+  #!/bin/sh
+  kubectl create secret generic my-s3-secrets \
+  --from-literal=Egress__S3Storage__monitorS3Blob__bucketName=myS3Bucket \
+  --from-literal=Egress__S3Storage__monitorS3Blob__accessKeyId=myTemporaryAccessKeyId \
+  --from-literal=Egress__S3Storage__monitorS3Blob__secretAccessKey=myTemporarySecretAccessKey \
+  --from-literal=Egress__S3Storage__monitorS3Blob__sessionToken=mySessionToken \
+  --from-literal=Egress__S3Storage__monitorS3Blob__regionName=auto \
+  --dry-run=client -o yaml | kubectl apply -f -
+ ```
+</details>
+
+> **Note:** Temporary credentials expire. It is the responsibility of the credential source (for example a sidecar that refreshes a mounted secret) to keep the configured values current; `dotnet monitor` does not renew them.
 
 ### Authenticating to S3 using service accounts
 
