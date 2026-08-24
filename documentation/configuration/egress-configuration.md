@@ -224,6 +224,8 @@ First Available: 8.0
 
 ### Authenticating to S3 using temporary credentials
 
+First Available: 10.0
+
 Some credential issuers (`sts:AssumeRole`, HashiCorp Vault, and several S3-compatible services) only ever hand out short-lived credentials, which consist of an access key id, a secret access key **and** a session token. All three must be presented on every request; a request signed with only the first two is rejected by the service.
 
 Set `sessionToken` alongside `accessKeyId` and `secretAccessKey` to use such credentials. `endpoint`, `regionName` and `forcePathStyle` are honored as usual, so this works against a custom S3-compatible endpoint.
@@ -270,6 +272,18 @@ Set `sessionToken` alongside `accessKeyId` and `secretAccessKey` to use such cre
 ### Authenticating to S3 using service accounts
 
 First Available: 9.0 Preview 5
+
+> **Behavior change:** `endpoint`, `regionName` and `forcePathStyle` are applied on **every**
+> authentication path. Previously they were only applied when `accessKeyId` and `secretAccessKey`
+> were both set, and were silently ignored when authenticating via `awsProfileName` or via the
+> default credential chain — which made those paths unusable against a custom S3-compatible
+> endpoint (the client failed with `No RegionEndpoint or ServiceURL configured`).
+>
+> If you authenticate with a profile or the default chain, set no `endpoint`, and previously
+> relied on the region coming from the profile or `AWS_REGION` while *also* having a stale
+> `regionName` configured, the configured `regionName` now wins. Note that an unrecognized
+> region name does not fail fast: `RegionEndpoint.GetBySystemName` returns a placeholder region
+> and the failure surfaces later, when the request is made.
 
 If running workloads in Kubernetes it is common to authenticate with AWS via Kubernetes service accounts ([AWS Documentation](https://docs.aws.amazon.com/eks/latest/userguide/pod-configuration.html)). This is supported in dotnet monitor if none of: `accessKeyId`, `secretAccessKey`, `awsProfileName` are specified. In this case dotnet monitor will fallback to load credentials to login using AWS default defined environment variables, this means that workloads running in EKS can utilize service accounts as discussed in the above AWS documentation.
 
