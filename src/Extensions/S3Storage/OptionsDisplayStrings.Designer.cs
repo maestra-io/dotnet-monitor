@@ -132,6 +132,15 @@ namespace Microsoft.Diagnostics.Monitoring.Extension.S3Storage {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Sends request payloads with an UNSIGNED-PAYLOAD signature and suppresses flexible-checksum trailers. Required by S3-compatible services that do not implement chunked or trailered payloads (for example Cloudflare R2). The endpoint must use HTTPS..
+        /// </summary>
+        public static string DisplayAttributeDescription_S3StorageEgressProviderOptions_DisablePayloadSigning {
+            get {
+                return ResourceManager.GetString("DisplayAttributeDescription_S3StorageEgressProviderOptions_DisablePayloadSigning", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to A boolean flag indicates if the return value of egress provider should be a pre-signed URL or only the bucket name and object id of uploaded entry..
         /// </summary>
         public static string DisplayAttributeDescription_S3StorageEgressProviderOptions_GeneratePreSignedUrl {

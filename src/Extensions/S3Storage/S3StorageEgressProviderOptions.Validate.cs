@@ -1,6 +1,7 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
@@ -19,6 +20,13 @@ namespace Microsoft.Diagnostics.Monitoring.Extension.S3Storage
             // A session token is only meaningful alongside a temporary access key id / secret access key pair.
             if (!string.IsNullOrEmpty(SessionToken) && (string.IsNullOrEmpty(AccessKeyId) || string.IsNullOrEmpty(SecretAccessKey)))
                 yield return new ValidationResult(Strings.ErrorMessage_EgressS3FailedMissingSessionCredentials);
+
+            // An unsigned payload is only tamper-protected by the transport, so the AWS SDK refuses to
+            // send one over plain HTTP. An empty endpoint means the AWS-hosted endpoints, which are HTTPS.
+            if (DisablePayloadSigning
+                && !string.IsNullOrEmpty(Endpoint)
+                && !Endpoint.StartsWith(Uri.UriSchemeHttps + Uri.SchemeDelimiter, StringComparison.OrdinalIgnoreCase))
+                yield return new ValidationResult(Strings.ErrorMessage_EgressS3FailedInsecurePayloadSigningOptOut);
         }
     }
 }
