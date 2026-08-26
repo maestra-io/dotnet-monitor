@@ -28,7 +28,7 @@ namespace Microsoft.Diagnostics.Monitoring.Extension.S3Storage
         private readonly string? _kmsEncryptionKey;
         private readonly bool _disablePayloadSigning;
 
-        public S3Storage(IAmazonS3 client, string bucketName, string objectId, string contentType, bool useKmsEncryption, string? kmsEncryptionKey, bool disablePayloadSigning = false)
+        public S3Storage(IAmazonS3 client, string bucketName, string objectId, string contentType, bool useKmsEncryption, string? kmsEncryptionKey, bool disablePayloadSigning)
         {
             _s3Client = client;
             _bucketName = bucketName;

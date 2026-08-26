@@ -22,10 +22,14 @@ namespace Microsoft.Diagnostics.Monitoring.Extension.S3Storage
                 yield return new ValidationResult(Strings.ErrorMessage_EgressS3FailedMissingSessionCredentials);
 
             // An unsigned payload is only tamper-protected by the transport, so the AWS SDK refuses to
-            // send one over plain HTTP. An empty endpoint means the AWS-hosted endpoints, which are HTTPS.
+            // send one over plain HTTP. Uri parsing (rather than a string prefix check) tolerates the
+            // leading whitespace and casing that environment-injected values can carry. This check only
+            // sees the configured Endpoint: when it is empty the SDK may still resolve an endpoint from
+            // the environment (AWS_ENDPOINT_URL_S3 / AWS_ENDPOINT_URL); a non-HTTPS endpoint from that
+            // path escapes validation here and is rejected by the SDK's signer at upload time instead.
             if (DisablePayloadSigning
                 && !string.IsNullOrEmpty(Endpoint)
-                && !Endpoint.StartsWith(Uri.UriSchemeHttps + Uri.SchemeDelimiter, StringComparison.OrdinalIgnoreCase))
+                && !(Uri.TryCreate(Endpoint, UriKind.Absolute, out Uri? endpointUri) && endpointUri.Scheme == Uri.UriSchemeHttps))
                 yield return new ValidationResult(Strings.ErrorMessage_EgressS3FailedInsecurePayloadSigningOptOut);
         }
     }

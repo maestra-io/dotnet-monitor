@@ -155,13 +155,13 @@ First Available: 8.0
 | bucketName | string | true | The name of the S3 Bucket to which the blob will be egressed. |
 | accessKeyId | string | false | The AWS AccessKeyId for IAM user to login.  |
 | secretAccessKey | string | false | The AWS SecretAccessKey associated AccessKeyId for IAM user to login. To login by access key id the 'secretAccessKey' must be set. |
-| sessionToken | string | false | The AWS SessionToken that accompanies temporary (STS-issued) credentials, e.g. those returned by `sts:AssumeRole` or by an S3-compatible service that issues short-lived credentials. When set, both 'accessKeyId' and 'secretAccessKey' must also be set. |
+| sessionToken | string | false | (maestra fork) The AWS SessionToken that accompanies temporary (STS-issued) credentials, e.g. those returned by `sts:AssumeRole` or by an S3-compatible service that issues short-lived credentials. When set, both 'accessKeyId' and 'secretAccessKey' must also be set. |
 | awsProfileName | string | false | The AWS profile name to be used for login. |
 | awsProfilePath | string | false | The AWS profile path, if profile details not stored in default path. |
 | regionName | string | false | A Region is a named set of AWS resources in the same geographical area. This option specifies the region to connect to. If the Endpoint is specified, this is the AuthenticationRegion; otherwise, it is the RegionEndpoint. |
 | preSignedUrlExpiry | TimeStamp? | false | When specified, a pre-signed url is returned after successful upload; this value specifies the amount of time the generated pre-signed url should be accessible. The value has to be between 1 minute and 1 day. |
 | forcePathStyle | bool | false | The boolean flag set for AWS connection configuration ForcePathStyle option. |
-| disablePayloadSigning | bool | false | Sends request payloads with an `UNSIGNED-PAYLOAD` signature and suppresses flexible-checksum trailers. Required by S3-compatible services that do not implement chunked or trailered payloads (for example Cloudflare R2). The endpoint must use HTTPS. |
+| disablePayloadSigning | bool | false | (maestra fork) Sends request payloads with an `UNSIGNED-PAYLOAD` signature, suppressing flexible-checksum trailers and response checksum validation. Required by S3-compatible services that do not implement chunked or trailered payloads (for example Cloudflare R2). The endpoint must use HTTPS. |
 | copyBufferSize | int | false | The buffer size to use when copying data from the original artifact to the blob stream. There is a minimum size of 5 MB which is set when the given value is lower.|
 | useKmsEncryption | bool | false | (9.0 Preview 6+) A boolean flag which controls whether the Egress should use KMS server side encryption. |
 | kmsEncryptionKey | string | false | (9.0 Preview 6+) If UseKmsEncryption is true, this specifies the arn of the "customer managed" KMS encryption key to be used for server side encryption. If no value is set for this field then S3 will use an AWS managed key for KMS encryption. |
@@ -225,7 +225,7 @@ First Available: 8.0
 
 ### Authenticating to S3 using temporary credentials
 
-First Available: 10.0
+First Available: maestra-io fork of 10.0 (pending upstream)
 
 Some credential issuers (`sts:AssumeRole`, HashiCorp Vault, and several S3-compatible services) only ever hand out short-lived credentials, which consist of an access key id, a secret access key **and** a session token. All three must be presented on every request; a request signed with only the first two is rejected by the service.
 
@@ -272,7 +272,7 @@ Set `sessionToken` alongside `accessKeyId` and `secretAccessKey` to use such cre
 
 ### Egressing to S3-compatible services without chunked payload support
 
-First Available: 10.0
+First Available: maestra-io fork of 10.0 (pending upstream)
 
 By default the AWS SDK uploads with a signed streaming payload (`STREAMING-AWS4-HMAC-SHA256-PAYLOAD`)
 and attaches a flexible checksum as an `aws-chunked` trailer. Several S3-compatible services implement
@@ -313,9 +313,9 @@ than by the payload signature — so the endpoint must be HTTPS, which is valida
 > **Note:** Leave this off for Amazon S3, which implements both features. Turning it off where it is
 > not needed loses the end-to-end integrity check that the payload signature and checksum provide.
 
-### Authenticating to S3 using service accounts
+### S3 endpoint handling on every authentication path
 
-First Available: 9.0 Preview 5
+First Available: maestra-io fork of 10.0 (pending upstream)
 
 > **Behavior change:** `endpoint`, `regionName` and `forcePathStyle` are applied on **every**
 > authentication path. Previously they were only applied when `accessKeyId` and `secretAccessKey`
@@ -328,6 +328,11 @@ First Available: 9.0 Preview 5
 > `regionName` configured, the configured `regionName` now wins. Note that an unrecognized
 > region name does not fail fast: `RegionEndpoint.GetBySystemName` returns a placeholder region
 > and the failure surfaces later, when the request is made.
+
+### Authenticating to S3 using service accounts
+
+First Available: 9.0 Preview 5
+
 
 If running workloads in Kubernetes it is common to authenticate with AWS via Kubernetes service accounts ([AWS Documentation](https://docs.aws.amazon.com/eks/latest/userguide/pod-configuration.html)). This is supported in dotnet monitor if none of: `accessKeyId`, `secretAccessKey`, `awsProfileName` are specified. In this case dotnet monitor will fallback to load credentials to login using AWS default defined environment variables, this means that workloads running in EKS can utilize service accounts as discussed in the above AWS documentation.
 
