@@ -1,0 +1,173 @@
+# Builds and pushes the CDP diagnostics-sidecar image: stock dotnet/monitor:10
+# with this fork's S3 egress extension (see eng/maestra/Dockerfile).
+#
+# Modeled on maestra-io/caddy-distroless's build-and-push-ecr.yml (Teleport
+# Machine ID via the per-repo image-push join token -> teleport-image-push AWS
+# role). Deviation from that pattern: no gha-release-number and no GitHub
+# release — this is a fork of dotnet/dotnet-monitor that syncs from upstream,
+# and maestra tags/releases would pollute it. Images are tagged
+# 10-<sha8> (immutable) plus moving `10` and `latest`; consumers pin by DIGEST
+# (printed in the job summary), so the tags are informational.
+name: Build and push sidecar image
+
+on:
+  push:
+    branches: [release/10.0]
+    paths:
+      - src/Extensions/S3Storage/**
+      - src/Microsoft.Diagnostics.Monitoring.Extension.Common/**
+      - eng/maestra/**
+      - .github/workflows/sidecar-image.yml
+  pull_request:
+    paths:
+      - eng/maestra/**
+      - .github/workflows/sidecar-image.yml
+  workflow_dispatch:
+
+concurrency:
+  group: sidecar-image
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  ECR_REGISTRY: 515260921971.dkr.ecr.eu-central-1.amazonaws.com
+  AWS_REGION: eu-central-1
+  TELEPORT_FQDN: teleport.maestra.io:443
+  TELEPORT_TOKEN: image-push-github-actions-dotnet-monitor
+  AWS_ROLE_ARN: "arn:aws:iam::515260921971:role/teleport-image-push"
+  IMAGE_NAME: dotnet-monitor-maestra
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    env:
+      DOCKER_BUILDKIT: 1
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7
+        with:
+          # No git operations downstream — don't leave a `GITHUB_TOKEN`
+          # in `.git/config` for the rest of the job to find.
+          persist-credentials: false
+
+      - name: Get Teleport version
+        id: tp-version
+        # Only needed when we'll authenticate (push / workflow_dispatch);
+        # on pull_request we skip this + the tbot/ECR steps and only smoke-build.
+        if: github.event_name != 'pull_request'
+        run: |
+          VERSION=$(curl -sf "https://${{ env.TELEPORT_FQDN }}/webapi/find" | jq -r '.auto_update.tools_version // .server_version')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Teleport binaries
+        if: github.event_name != 'pull_request'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
+        with:
+          path: ${{ runner.tool_cache }}/teleport
+          key: teleport-${{ steps.tp-version.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install Teleport
+        if: github.event_name != 'pull_request'
+        uses: teleport-actions/setup@b638ff596557cc3959eb6b5287d5e58e0c8ac6a6  # v1
+        with:
+          version: ${{ steps.tp-version.outputs.version }}
+          proxy: ${{ env.TELEPORT_FQDN }}
+
+      - name: ECR login via Teleport Workload Identity
+        if: github.event_name != 'pull_request'
+        run: |
+          cat > /tmp/tbot.yaml << EOF_TBOT
+          version: v2
+          proxy_server: ${{ env.TELEPORT_FQDN }}
+          onboarding:
+            join_method: github
+            token: ${{ env.TELEPORT_TOKEN }}
+          oneshot: true
+          storage:
+            type: memory
+          services:
+            - type: workload-identity-jwt
+              destination:
+                type: directory
+                path: /tmp/tbot-output
+              selector:
+                name: image-push
+              audiences: ["sts.amazonaws.com"]
+          EOF_TBOT
+
+          mkdir -p /tmp/tbot-output
+
+          # tbot's oneshot mode spawns a heartbeat service alongside the
+          # workload-identity-jwt one. The heartbeat occasionally exits with
+          # "service(heartbeat) error reading from server: EOF" — a transient
+          # gRPC stream close on the Teleport side — even though the JWT was
+          # written successfully. Treat the JWT file's presence as the source
+          # of truth instead of tbot's exit code, then validate it actually
+          # works against AWS STS before trusting it for ECR.
+          set +e
+          tbot start -c /tmp/tbot.yaml
+          TBOT_RC=$?
+          set -e
+          if [ ! -s /tmp/tbot-output/jwt_svid ]; then
+            echo "tbot exited $TBOT_RC and did not write a JWT — failing"
+            exit 1
+          fi
+          if [ $TBOT_RC -ne 0 ]; then
+            echo "tbot exited $TBOT_RC (non-zero, but JWT was written — most likely a transient heartbeat EOF; validating with STS next)"
+          fi
+
+          export AWS_WEB_IDENTITY_TOKEN_FILE=/tmp/tbot-output/jwt_svid
+          export AWS_ROLE_ARN="${{ env.AWS_ROLE_ARN }}"
+          export AWS_DEFAULT_REGION=${{ env.AWS_REGION }}
+
+          # Smoke-validate the JWT actually maps to the expected IAM role
+          # before any push.
+          aws sts get-caller-identity > /dev/null
+
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+            docker login ${{ env.ECR_REGISTRY }} --username AWS --password-stdin
+
+          aws ecr describe-repositories --repository-names ${{ env.IMAGE_NAME }} --region ${{ env.AWS_REGION }} 2>/dev/null || \
+          aws ecr create-repository --repository-name ${{ env.IMAGE_NAME }} --region ${{ env.AWS_REGION }}
+
+      - name: Smoke build (PR only — no push)
+        if: github.event_name == 'pull_request'
+        run: |
+          docker build -f eng/maestra/Dockerfile -t dotnet-monitor-maestra:pr-${{ github.event.pull_request.number }} .
+
+      - name: Build and push
+        if: github.event_name != 'pull_request'
+        run: |
+          SHA_TAG="10-$(echo "${{ github.sha }}" | cut -c1-8)"
+          IMAGE=${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}
+
+          docker build \
+            -f eng/maestra/Dockerfile \
+            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.title=dotnet-monitor-maestra" \
+            --label "org.opencontainers.image.vendor=maestra-io" \
+            -t "$IMAGE:$SHA_TAG" \
+            -t "$IMAGE:10" \
+            -t "$IMAGE:latest" \
+            .
+          docker push "$IMAGE:$SHA_TAG"
+          docker push "$IMAGE:10"
+          docker push "$IMAGE:latest"
+
+          # The digest is what consumers pin (the image is outside the Kyverno
+          # mcr.microsoft.com digest-pin policy). Surface it where a human
+          # bumping the chart will look.
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:$SHA_TAG" | cut -d@ -f2)
+          {
+            echo "## Pushed ${IMAGE}"
+            echo ""
+            echo "| tag | |"
+            echo "|---|---|"
+            echo "| \`$SHA_TAG\` | immutable |"
+            echo "| \`10\`, \`latest\` | moving |"
+            echo ""
+            echo "**Digest (pin this in charts):** \`$DIGEST\`"
+          } >> "$GITHUB_STEP_SUMMARY"
