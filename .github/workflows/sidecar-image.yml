@@ -138,6 +138,7 @@ jobs:
           docker build -f eng/maestra/Dockerfile -t dotnet-monitor-maestra:pr-${{ github.event.pull_request.number }} .
 
       - name: Build and push
+        id: push
         if: github.event_name != 'pull_request'
         run: |
           SHA_TAG="10-$(echo "${{ github.sha }}" | cut -c1-8)"
@@ -171,3 +172,20 @@ jobs:
             echo ""
             echo "**Digest (pin this in charts):** \`$DIGEST\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "mirror_tags=$SHA_TAG,10,latest" >> "$GITHUB_OUTPUT"
+
+      # Mirror the pushed tags to us-west-2 — phase 3 dual-push of the ECR
+      # eu-central-1 -> us-west-2 migration
+      # (https://github.com/maestra-io/issues-maestra/issues/1354, rake #8).
+      # This workflow pushes with its own docker push, so it bypasses the
+      # dual-push already built into the shared composite actions.
+      - name: Mirror images to us-west-2
+        if: github.event_name != 'pull_request'
+        uses: maestra-io/github-actions/mirror-to-secondary-ecr@main
+        with:
+          repository: ${{ env.IMAGE_NAME }}
+          tag: ${{ steps.push.outputs.mirror_tags }}
+          registry: ${{ env.ECR_REGISTRY }}
+          awsRoleArn: ${{ env.AWS_ROLE_ARN }}
+          awsWebIdentityTokenFile: /tmp/tbot-output/jwt_svid
