@@ -129,8 +129,14 @@ jobs:
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
             docker login ${{ env.ECR_REGISTRY }} --username AWS --password-stdin
 
+          # 10-<sha8> tags are immutable: a published tag must never be silently
+          # overwritten (2026-10-09: GitLab re-minted release numbers after a restore
+          # and CI overwrote released images). The moving `latest` and `10` are
+          # excluded — keep `10` in sync with the major alias pushed below.
           aws ecr describe-repositories --repository-names ${{ env.IMAGE_NAME }} --region ${{ env.AWS_REGION }} 2>/dev/null || \
-          aws ecr create-repository --repository-name ${{ env.IMAGE_NAME }} --region ${{ env.AWS_REGION }}
+          aws ecr create-repository --repository-name ${{ env.IMAGE_NAME }} --region ${{ env.AWS_REGION }} \
+            --image-tag-mutability IMMUTABLE_WITH_EXCLUSION \
+            --image-tag-mutability-exclusion-filters 'filterType=WILDCARD,filter=latest' 'filterType=WILDCARD,filter=10'
 
       - name: Smoke build (PR only — no push)
         if: github.event_name == 'pull_request'
