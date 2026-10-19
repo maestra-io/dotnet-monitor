@@ -1,28 +1,35 @@
-# CDP diagnostics-sidecar: stock mcr.microsoft.com/dotnet/monitor:10 with
-# /app/extensions/S3Storage replaced by this fork's build of the S3 egress
-# extension (sessionToken support, endpoint honored on every credential path,
-# disablePayloadSigning for Cloudflare R2 — stock cannot send UNSIGNED-PAYLOAD
-# and R2 rejects everything else).
+# CDP diagnostics sidecar: stock mcr.microsoft.com/dotnet/monitor:10 with
+# /app/extensions/S3Storage replaced by the S3 egress extension built from
+# upstream dotnet/dotnet-monitor release/10.0 plus eng/maestra/patches
+# (sessionToken, endpoint honored on every credential path,
+# disablePayloadSigning for Cloudflare R2). See eng/maestra/README.md.
 #
-# Built by .github/workflows/sidecar-image.yml from the fork's own checkout
-# (the workflow's SHA is the provenance; no ARG pinning needed) and pushed to
-# ECR dotnet-monitor-maestra. Consumers pin by digest.
+# Build context: the repo root with upstream checked out into upstream/
+# (sidecar-image.yml does that); Dockerfile.dockerignore keeps the context to
+# upstream/ and the patches.
 #
-# The final stage is the stock image, which is shell-less — COPY merge-replaces
+# The final stage is the stock image, which is shell-less. COPY merge-replaces
 # the extension directory; dotnet-monitor loads the extension via
 # extension.json -> dotnet-monitor-egress-s3storage.dll, whose deps.json
 # governs assembly loading, so any stock file left beneath the copy is inert.
-# This fork branch tracks upstream release/10.0, keeping the extension's
-# AWSSDK/runtime pins consistent with the base image.
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
-COPY . /src
+COPY upstream/ /src
+COPY eng/maestra/patches/ /patches/
 WORKDIR /src
+RUN git apply --verbose /patches/*.patch
 # Plain dotnet publish, not the arcade build: global.json pins only
 # tools.dotnet (ignored by the CLI), and the darc-int feed is disabled in
-# NuGet.config, so an anonymous restore succeeds.
-RUN dotnet publish src/Extensions/S3Storage/S3Storage.csproj -c Release -f net10.0 -o /out
+# NuGet.config, so an anonymous restore succeeds. ContinuousIntegrationBuild
+# and no source revision keep the output byte-identical for identical inputs,
+# so /ext.sha256 only moves when the extension really changed.
+RUN dotnet publish src/Extensions/S3Storage/S3Storage.csproj -c Release -f net10.0 -o /out \
+      -p:ContinuousIntegrationBuild=true -p:IncludeSourceRevisionInInformationalVersion=false \
+ && cd /out && find . -type f | LC_ALL=C sort | xargs sha256sum | sha256sum | cut -c1-64 > /ext.sha256
+
+FROM build AS test
+RUN dotnet test src/Tests/Microsoft.Diagnostics.Monitoring.S3StorageTests.UnitTests -f net10.0
 
 FROM mcr.microsoft.com/dotnet/monitor:10
 # 1654 = the image's APP_UID; keeps ownership sane if a consumer ever drops

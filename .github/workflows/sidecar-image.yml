@@ -1,27 +1,30 @@
 # Builds and pushes the CDP diagnostics-sidecar image: stock dotnet/monitor:10
-# with this fork's S3 egress extension (see eng/maestra/Dockerfile).
+# with the S3 egress extension built from a FRESH upstream dotnet/dotnet-monitor
+# release/10.0 plus eng/maestra/patches (see eng/maestra/README.md).
 #
 # Modeled on maestra-io/caddy-distroless's build-and-push-ecr.yml (Teleport
 # Machine ID via the per-repo image-push join token -> teleport-image-push AWS
 # role). Deviation from that pattern: no gha-release-number and no GitHub
-# release — this is a fork of dotnet/dotnet-monitor that syncs from upstream,
-# and maestra tags/releases would pollute it. Images are tagged
-# 10-<sha8> (immutable) plus moving `10` and `latest`; consumers pin by DIGEST
-# (printed in the job summary), so the tags are informational.
+# release. Images are tagged 10-<key> (immutable; key = extension bytes +
+# Dockerfile, so an unchanged build pushes nothing) plus moving `10` and
+# `latest`; consumers pin by DIGEST, which DirectCRM's Renovate bumps.
 name: Build and push sidecar image
 
 on:
   push:
     branches: [release/10.0]
     paths:
-      - src/Extensions/S3Storage/**
-      - src/Microsoft.Diagnostics.Monitoring.Extension.Common/**
       - eng/maestra/**
       - .github/workflows/sidecar-image.yml
   pull_request:
     paths:
       - eng/maestra/**
       - .github/workflows/sidecar-image.yml
+  # Upstream changes arrive without a push here: rebuild daily, push only if the
+  # extension bytes moved. ponytail: GitHub disables crons after 60 days without
+  # repo activity; Renovate's monthly MCR digest PRs keep it alive.
+  schedule:
+    - cron: "23 5 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -50,6 +53,14 @@ jobs:
         with:
           # No git operations downstream — don't leave a `GITHUB_TOKEN`
           # in `.git/config` for the rest of the job to find.
+          persist-credentials: false
+
+      - name: Check out upstream dotnet/dotnet-monitor release/10.0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7
+        with:
+          repository: dotnet/dotnet-monitor
+          ref: release/10.0
+          path: upstream
           persist-credentials: false
 
       - name: Get Teleport version
@@ -138,17 +149,34 @@ jobs:
             --image-tag-mutability IMMUTABLE_WITH_EXCLUSION \
             --image-tag-mutability-exclusion-filters 'filterType=WILDCARD,filter=latest' 'filterType=WILDCARD,filter=10'
 
-      - name: Smoke build (PR only — no push)
-        if: github.event_name == 'pull_request'
+      # A patch that no longer applies to upstream, or a behaviour change that
+      # breaks it, fails here on every trigger, the daily one included.
+      - name: Apply patches and run their unit tests
+        run: docker build -f eng/maestra/Dockerfile --target test .
+
+      - name: Compute the image key
+        id: key
         run: |
-          docker build -f eng/maestra/Dockerfile -t dotnet-monitor-maestra:pr-${{ github.event.pull_request.number }} .
+          docker build -f eng/maestra/Dockerfile --target build -t dnm-build .
+          EXT=$(docker run --rm dnm-build cat /ext.sha256)
+          KEY=$({ echo "$EXT"; cat eng/maestra/Dockerfile eng/maestra/Dockerfile.dockerignore; } | sha256sum | cut -c1-12)
+          {
+            echo "tag=10-$KEY"
+            echo "ext=$EXT"
+            echo "upstream=$(git -C upstream rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         id: push
         if: github.event_name != 'pull_request'
         run: |
-          SHA_TAG="10-$(echo "${{ github.sha }}" | cut -c1-8)"
+          SHA_TAG="${{ steps.key.outputs.tag }}"
           IMAGE=${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}
+
+          if docker manifest inspect "$IMAGE:$SHA_TAG" > /dev/null 2>&1; then
+            echo "## ${IMAGE}:${SHA_TAG} already exists, nothing changed (upstream ${{ steps.key.outputs.upstream }})" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
 
           docker build \
             -f eng/maestra/Dockerfile \
@@ -156,6 +184,8 @@ jobs:
             --label "org.opencontainers.image.revision=${{ github.sha }}" \
             --label "org.opencontainers.image.title=dotnet-monitor-maestra" \
             --label "org.opencontainers.image.vendor=maestra-io" \
+            --label "io.maestra.upstream-revision=${{ steps.key.outputs.upstream }}" \
+            --label "io.maestra.extension-sha256=${{ steps.key.outputs.ext }}" \
             -t "$IMAGE:$SHA_TAG" \
             -t "$IMAGE:10" \
             -t "$IMAGE:latest" \
@@ -188,7 +218,7 @@ jobs:
       # This workflow pushes with its own docker push, so it bypasses the
       # dual-push already built into the shared composite actions.
       - name: Mirror images to the secondary ECR region (off since phase 6)
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && steps.push.outputs.mirror_tags != ''
         uses: maestra-io/github-actions/mirror-to-secondary-ecr@main
         with:
           # Phase 6 (https://github.com/maestra-io/issues-maestra/issues/1354):

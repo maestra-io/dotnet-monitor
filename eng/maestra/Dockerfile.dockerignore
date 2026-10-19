@@ -1,8 +1,6 @@
-# BuildKit reads this next to the Dockerfile. Keep the build context to the
-# sources the publish actually needs.
-.git
-artifacts
-documentation
-.vs
-**/bin
-**/obj
+# BuildKit reads this next to the Dockerfile. The context is only the fresh
+# upstream checkout and our patches; this repo's own src/ is not built.
+*
+!upstream/
+upstream/.git
+!eng/maestra/patches/

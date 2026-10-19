@@ -39,11 +39,6 @@ namespace Microsoft.Diagnostics.Monitoring.Extension.S3Storage
 
         [Display(
             ResourceType = typeof(OptionsDisplayStrings),
-            Description = nameof(OptionsDisplayStrings.DisplayAttributeDescription_S3StorageEgressProviderOptions_SessionToken))]
-        public string? SessionToken { get; set; }
-
-        [Display(
-            ResourceType = typeof(OptionsDisplayStrings),
             Description = nameof(OptionsDisplayStrings.DisplayAttributeDescription_S3StorageEgressProviderOptions_AWSProfileName))]
         public string? AwsProfileName { get; set; }
 
@@ -62,11 +57,6 @@ namespace Microsoft.Diagnostics.Monitoring.Extension.S3Storage
             ResourceType = typeof(OptionsDisplayStrings),
             Description = nameof(OptionsDisplayStrings.DisplayAttributeDescription_S3StorageEgressProviderOptions_ForcePathStyle))]
         public bool ForcePathStyle { get; set; }
-
-        [Display(
-            ResourceType = typeof(OptionsDisplayStrings),
-            Description = nameof(OptionsDisplayStrings.DisplayAttributeDescription_S3StorageEgressProviderOptions_DisablePayloadSigning))]
-        public bool DisablePayloadSigning { get; set; }
 
         [Display(
             ResourceType = typeof(OptionsDisplayStrings),
