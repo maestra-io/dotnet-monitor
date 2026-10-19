@@ -1,3 +1,4 @@
+<!-- cspell:words maestra automerged -->
 # dotnet-monitor-maestra
 
 The CDP diagnostics sidecar: stock `mcr.microsoft.com/dotnet/monitor:10` with the S3 egress extension rebuilt from upstream `dotnet/dotnet-monitor` `release/10.0` plus the patches in `patches/`. The image is pushed to ECR `dotnet-monitor-maestra` and pinned by digest in DirectCRM `helmfile/fluxcd/cdp-app-tenant/values.yaml`.
