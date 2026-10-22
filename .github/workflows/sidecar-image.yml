@@ -149,85 +149,85 @@ jobs:
             --image-tag-mutability IMMUTABLE_WITH_EXCLUSION \
             --image-tag-mutability-exclusion-filters 'filterType=WILDCARD,filter=latest' 'filterType=WILDCARD,filter=10'
 
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+
       # A patch that no longer applies to upstream, or a behaviour change that
       # breaks it, fails here on every trigger, the daily one included.
       - name: Apply patches and run their unit tests
-        run: docker build -f eng/maestra/Dockerfile --target test .
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          file: eng/maestra/Dockerfile
+          target: test
+
+      - name: Build the extension
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          file: eng/maestra/Dockerfile
+          target: build
+          load: true
+          tags: dnm-build
 
       - name: Compute the image key
         id: key
         run: |
-          docker build -f eng/maestra/Dockerfile --target build -t dnm-build .
           EXT=$(docker run --rm dnm-build cat /ext.sha256)
           KEY=$({ echo "$EXT"; cat eng/maestra/Dockerfile eng/maestra/Dockerfile.dockerignore; } | sha256sum | cut -c1-12)
           {
             echo "tag=10-$KEY"
             echo "ext=$EXT"
             echo "upstream=$(git -C upstream rev-parse HEAD)"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build and push
-        id: push
+      - name: Skip the push when the tag already exists
+        id: existing
         if: github.event_name != 'pull_request'
         run: |
-          SHA_TAG="${{ steps.key.outputs.tag }}"
           IMAGE=${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}
-
-          if docker manifest inspect "$IMAGE:$SHA_TAG" > /dev/null 2>&1; then
-            echo "## ${IMAGE}:${SHA_TAG} already exists, nothing changed (upstream ${{ steps.key.outputs.upstream }})" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+          if docker manifest inspect "$IMAGE:${{ steps.key.outputs.tag }}" > /dev/null 2>&1; then
+            echo "## ${IMAGE}:${{ steps.key.outputs.tag }} already exists, nothing changed (upstream ${{ steps.key.outputs.upstream }})" >> "$GITHUB_STEP_SUMMARY"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
-          docker build \
-            -f eng/maestra/Dockerfile \
-            --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --label "org.opencontainers.image.revision=${{ github.sha }}" \
-            --label "org.opencontainers.image.title=dotnet-monitor-maestra" \
-            --label "org.opencontainers.image.vendor=maestra-io" \
-            --label "io.maestra.upstream-revision=${{ steps.key.outputs.upstream }}" \
-            --label "io.maestra.extension-sha256=${{ steps.key.outputs.ext }}" \
-            -t "$IMAGE:$SHA_TAG" \
-            -t "$IMAGE:10" \
-            -t "$IMAGE:latest" \
-            .
-          docker push "$IMAGE:$SHA_TAG"
-          docker push "$IMAGE:10"
-          docker push "$IMAGE:latest"
+      # BuildKit pushes only the layers ECR lacks (the stages above are cache
+      # hits in the same builder); `docker push` from the fresh runner daemon
+      # re-uploaded every layer of every release.
+      - name: Build and push
+        id: push
+        if: github.event_name != 'pull_request' && steps.existing.outputs.skip != 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          file: eng/maestra/Dockerfile
+          labels: |
+            org.opencontainers.image.created=${{ steps.key.outputs.created }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=dotnet-monitor-maestra
+            org.opencontainers.image.vendor=maestra-io
+            io.maestra.upstream-revision=${{ steps.key.outputs.upstream }}
+            io.maestra.extension-sha256=${{ steps.key.outputs.ext }}
+          provenance: false
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.key.outputs.tag }}
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:10
+            ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-          # The digest is what consumers pin (the image is outside the Kyverno
-          # mcr.microsoft.com digest-pin policy). Surface it where a human
-          # bumping the chart will look.
-          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:$SHA_TAG" | cut -d@ -f2)
+      # The digest is what consumers pin (the image is outside the Kyverno
+      # mcr.microsoft.com digest-pin policy). Surface it where a human
+      # bumping the chart will look.
+      - name: Summary
+        if: github.event_name != 'pull_request' && steps.existing.outputs.skip != 'true'
+        run: |
           {
-            echo "## Pushed ${IMAGE}"
+            echo "## Pushed ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}"
             echo ""
             echo "| tag | |"
             echo "|---|---|"
-            echo "| \`$SHA_TAG\` | immutable |"
+            echo "| \`${{ steps.key.outputs.tag }}\` | immutable |"
             echo "| \`10\`, \`latest\` | moving |"
             echo ""
-            echo "**Digest (pin this in charts):** \`$DIGEST\`"
+            echo "**Digest (pin this in charts):** \`${{ steps.push.outputs.digest }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
-
-          echo "mirror_tags=$SHA_TAG,10,latest" >> "$GITHUB_OUTPUT"
-
-      # Was the phase 3 dual-push mirror of the ECR eu-central-1 -> us-west-2
-      # migration; phase 6 froze eu-central-1 and this workflow now pushes
-      # straight to us-west-2, so the mirror has nothing to copy and is off
-      # (https://github.com/maestra-io/issues-maestra/issues/1354, rake #8).
-      # This workflow pushes with its own docker push, so it bypasses the
-      # dual-push already built into the shared composite actions.
-      - name: Mirror images to the secondary ECR region (off since phase 6)
-        if: github.event_name != 'pull_request' && steps.push.outputs.mirror_tags != ''
-        uses: maestra-io/github-actions/mirror-to-secondary-ecr@main
-        with:
-          # Phase 6 (https://github.com/maestra-io/issues-maestra/issues/1354):
-          # eu-central-1 is frozen, us-west-2 is the only push target, so there
-          # is nothing left to mirror. Empty skips the whole step. Kept as a
-          # call so restoring a mirror is one value.
-          secondaryRegion: ''
-          repository: ${{ env.IMAGE_NAME }}
-          tag: ${{ steps.push.outputs.mirror_tags }}
-          registry: ${{ env.ECR_REGISTRY }}
-          awsRoleArn: ${{ env.AWS_ROLE_ARN }}
-          awsWebIdentityTokenFile: /tmp/tbot-output/jwt_svid
