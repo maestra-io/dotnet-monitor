@@ -49,14 +49,14 @@ jobs:
     env:
       DOCKER_BUILDKIT: 1
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           # No git operations downstream — don't leave a `GITHUB_TOKEN`
           # in `.git/config` for the rest of the job to find.
           persist-credentials: false
 
       - name: Check out upstream dotnet/dotnet-monitor release/10.0
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           repository: dotnet/dotnet-monitor
           ref: release/10.0
@@ -74,14 +74,14 @@ jobs:
 
       - name: Cache Teleport binaries
         if: github.event_name != 'pull_request'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ${{ runner.tool_cache }}/teleport
           key: teleport-${{ steps.tp-version.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
 
       - name: Install Teleport
         if: github.event_name != 'pull_request'
-        uses: teleport-actions/setup@b638ff596557cc3959eb6b5287d5e58e0c8ac6a6  # v1
+        uses: teleport-actions/setup@b638ff596557cc3959eb6b5287d5e58e0c8ac6a6  # v1.1.1
         with:
           version: ${{ steps.tp-version.outputs.version }}
           proxy: ${{ env.TELEPORT_FQDN }}
