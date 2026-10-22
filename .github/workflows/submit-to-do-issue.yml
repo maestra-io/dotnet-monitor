@@ -16,7 +16,7 @@ jobs:
       issues: write
 
     steps:
-      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         id: check-user
         with:
           script: |
@@ -27,7 +27,7 @@ jobs:
             });
 
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -35,7 +35,7 @@ jobs:
       # The default artifact download action doesn't support cross-workflow
       # artifacts, so use a 3rd party one.
       - name: 'Download linting results'
-        uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151
+        uses: dawidd6/action-download-artifact@b6e2e70617bc3265edd6dab6c906732b2f1ae151 # v21
         with:
           workflow: ${{env.workflow_name}}
           run_id: ${{github.event.workflow_run.id }}
