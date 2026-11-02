@@ -155,13 +155,15 @@ jobs:
       # restores and publishes from the cache instead of rebuilding daily; the three
       # builds share the `build` stage through BuildKit's content-addressed cache.
       # A patch that no longer applies to upstream, or a behaviour change that
-      # breaks it, fails here on every trigger, the daily one included.
+      # breaks it, fails here on every trigger, the daily one included: the `test`
+      # stage itself is never served from the cache (no-cache-filters).
       - name: Apply patches and run their unit tests
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .
           file: eng/maestra/Dockerfile
           target: test
+          no-cache-filters: test
           cache-from: type=gha,scope=test
           cache-to: type=gha,mode=max,scope=test
 
