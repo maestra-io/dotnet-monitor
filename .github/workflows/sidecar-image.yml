@@ -165,7 +165,7 @@ jobs:
           target: test
           no-cache-filters: test
           cache-from: type=gha,scope=test
-          cache-to: type=gha,mode=max,scope=test
+          cache-to: type=gha,mode=max,ignore-error=true,scope=test
 
       - name: Build the extension
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
@@ -174,7 +174,7 @@ jobs:
           file: eng/maestra/Dockerfile
           target: build
           cache-from: type=gha,scope=build
-          cache-to: type=gha,mode=max,scope=build
+          cache-to: type=gha,mode=max,ignore-error=true,scope=build
           load: true
           tags: dnm-build
 
@@ -211,7 +211,7 @@ jobs:
           context: .
           file: eng/maestra/Dockerfile
           cache-from: type=gha,scope=sidecar
-          cache-to: type=gha,mode=max,scope=sidecar
+          cache-to: type=gha,mode=max,ignore-error=true,scope=sidecar
           labels: |
             org.opencontainers.image.created=${{ steps.key.outputs.created }}
             org.opencontainers.image.revision=${{ github.sha }}
