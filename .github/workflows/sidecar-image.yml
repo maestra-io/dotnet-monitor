@@ -226,6 +226,17 @@ jobs:
             ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:10
             ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
+      # Keyless cosign signature + CycloneDX SBOM attestation (issues-maestra#1648).
+      # The tbot JWT is exported only inside the login step; hand it to aws here.
+      - name: Sign and attest the image
+        if: github.event_name != 'pull_request' && steps.existing.outputs.skip != 'true'
+        uses: maestra-io/github-actions/sign-image@a0e5143b4ba2e0119de2bf32b55ee79e68b71c06 # v1.61.2
+        env:
+          AWS_WEB_IDENTITY_TOKEN_FILE: /tmp/tbot-output/jwt_svid
+        with:
+          image: ${{ env.ECR_REGISTRY }}/${{ env.IMAGE_NAME }}
+          digest: ${{ steps.push.outputs.digest }}
+
       # The digest is what consumers pin (the image is outside the Kyverno
       # mcr.microsoft.com digest-pin policy). Surface it where a human
       # bumping the chart will look.
