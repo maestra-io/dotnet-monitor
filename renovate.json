@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Fork of dotnet/dotnet-monitor: only the maestra sidecar image is ours. Pin its MCR bases by digest so an MCR rebuild (servicing, base CVEs) opens a PR whose merge rebuilds dotnet-monitor-maestra via sidecar-image.yml; DirectCRM then picks up the new digest through the org preset. The Mend app skips forks without forkProcessing.",
-  "extends": ["config:recommended", ":disableDependencyDashboard"],
+  "extends": ["config:recommended", ":disableDependencyDashboard", "github>maestra-io/renovate-config:externalImages"],
   "forkProcessing": "enabled",
   "enabledManagers": ["dockerfile"],
   "includePaths": ["eng/maestra/**"],
@@ -15,11 +15,10 @@
       "enabled": false
     },
     {
+      "description": "No automerge: an external digest move is new content and waits for a human (issues-maestra#1649).",
       "matchDatasources": ["docker"],
       "matchUpdateTypes": ["pin", "pinDigest", "digest"],
-      "groupName": "MCR base digests",
-      "automerge": true,
-      "automergeStrategy": "rebase"
+      "groupName": "MCR base digests"
     }
   ]
 }
