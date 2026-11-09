@@ -1,4 +1,4 @@
-# CDP diagnostics sidecar: stock mcr.microsoft.com/dotnet/monitor:10 with
+# CDP diagnostics sidecar: stock packages.maestra.io/mcr/dotnet/monitor:10@sha256:6a2fa4e7ec489fbff4b63ac63ddc30f3a6bd97045b9f210058df609616a303f0 with
 # /app/extensions/S3Storage replaced by the S3 egress extension built from
 # upstream dotnet/dotnet-monitor release/10.0 plus eng/maestra/patches
 # (sessionToken, endpoint honored on every credential path,
@@ -13,7 +13,7 @@
 # extension.json -> dotnet-monitor-egress-s3storage.dll, whose deps.json
 # governs assembly loading, so any stock file left beneath the copy is inert.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:212fe4cb74627d5adf9817a4088906ae3edff1bd853bb27565d4b46731efe61e AS build
+FROM packages.maestra.io/mcr/dotnet/sdk:10.0@sha256:212fe4cb74627d5adf9817a4088906ae3edff1bd853bb27565d4b46731efe61e AS build
 
 COPY upstream/ /src
 COPY eng/maestra/patches/ /patches/
@@ -31,7 +31,7 @@ RUN dotnet publish src/Extensions/S3Storage/S3Storage.csproj -c Release -f net10
 FROM build AS test
 RUN dotnet test src/Tests/Microsoft.Diagnostics.Monitoring.S3StorageTests.UnitTests -f net10.0
 
-FROM mcr.microsoft.com/dotnet/monitor:10@sha256:200dbc2060a2f4101dbc1fe4fa68ce3dd096426ebd82383f5698c4cc17bd97ec
+FROM packages.maestra.io/mcr/dotnet/monitor:10@sha256:200dbc2060a2f4101dbc1fe4fa68ce3dd096426ebd82383f5698c4cc17bd97ec
 # 1654 = the image's APP_UID; keeps ownership sane if a consumer ever drops
 # the charts' runAsUser: 0.
 COPY --from=build --chown=1654:1654 /out/ /app/extensions/S3Storage/
