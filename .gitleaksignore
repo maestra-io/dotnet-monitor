@@ -1,0 +1,8 @@
+# Upstream lines only (identical on the upstream default branch, or written by an upstream
+# commit): upstream test fixtures / docs / vendored code, not our credentials. issues-maestra#1649
+documentation/api-key-format.md:jwt:13
+documentation/api-key-setup.md:curl-auth-header:147
+documentation/api-key-setup.md:jwt:142
+documentation/api-key-setup.md:jwt:150
+documentation/api-key-setup.md:jwt:158
+documentation/api-key-setup.md:jwt:23
