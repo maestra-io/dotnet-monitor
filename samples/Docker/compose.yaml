@@ -1,7 +1,7 @@
 # Tell us about your experience using dotnet monitor: https://aka.ms/dotnet-monitor-survey
 services:
   app:
-    image: mcr.microsoft.com/dotnet/samples:aspnetapp-chiseled
+    image: packages.maestra.io/mcr/dotnet/samples:aspnetapp-chiseled
     ports:
       - "8080:8080"
     environment:
@@ -15,7 +15,7 @@ services:
           memory: 512M
 
   monitor:
-    image: mcr.microsoft.com/dotnet/monitor:8
+    image: packages.maestra.io/mcr/dotnet/monitor:8
     # DO NOT use the --no-auth argument for deployments in production; this argument is used for demonstration
     # purposes only in this example. Please continue reading after this example for further details.
     command: ["collect", "--no-auth"]
