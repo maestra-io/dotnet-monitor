@@ -6,6 +6,7 @@ on:
 
 permissions:
   pull-requests: read
+  id-token: write # nora session token (npm)
 
 jobs:
   check-markdown-links:
@@ -18,9 +19,24 @@ jobs:
         with:
           persist-credentials: false
 
+      # gaurav-nelson/github-action-markdown-link-check 1.0.17 built a node image from Docker Hub
+      # and installed markdown-link-check from npmjs (issues-maestra#1649): the same
+      # markdown-link-check 3.13.7 through nora, the same find call and the same verdict (an
+      # "ERROR:" line fails the step with 113).
+      - name: nora session token
+        id: nora
+        uses: maestra-io/github-actions/nora-session@7fe2948b7c7d10886a60e07bca79968cc1c49627 # v1.95.2
+      - name: Install markdown-link-check
+        env:
+          NORA_TOKEN: ${{ steps.nora.outputs.token }}
+        run: |
+          # npm expands ${NORA_TOKEN} at run time; the token is never written to disk.
+          # shellcheck disable=SC2016
+          printf '%s\n' 'registry=https://packages.maestra.io/npm/' '//packages.maestra.io/npm/:_authToken=${NORA_TOKEN}' > "$RUNNER_TEMP/nora.npmrc"
+          NPM_CONFIG_USERCONFIG="$RUNNER_TEMP/nora.npmrc" npm install -g --no-audit --no-fund markdown-link-check@3.13.7
       - name: Check markdown links
-        uses: gaurav-nelson/github-action-markdown-link-check@3c3b66f1f7d0900e37b71eca45b63ea9eedfce31 # 1.0.17
-        with:
-          config-file: .github/linters/check-markdown-links-config.json
-          use-quiet-mode: 'yes'
-          use-verbose-mode: 'no'
+        run: |
+          find . -name '*.md' -not -path './node_modules/*' -exec markdown-link-check '{}' \
+            --config .github/linters/check-markdown-links-config.json -q ';' &>> "$RUNNER_TEMP/mlc.txt"
+          if grep -q 'ERROR:' "$RUNNER_TEMP/mlc.txt"; then cat "$RUNNER_TEMP/mlc.txt"; exit 113; fi
+          echo 'All links are good!'
